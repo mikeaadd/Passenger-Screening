@@ -134,7 +134,7 @@ def generator2(subjects, label_path, batch_size):
             yield features, np.array(y_batch)
 
 
-def generator(src, label_path, batch_size):
+def generator(src, label_path, input_size=(155,128), batch_size=1):
     # intialize tracking and saving items
     files = [f for f in os.listdir(src) if os.path.isfile(os.path.join(src, f))]
     threat_zone_examples = []
@@ -151,7 +151,7 @@ def generator(src, label_path, batch_size):
                 # transpose so that the slice is the first dimension shape(16, 620, 512)
                 images = images.transpose()
                 for j in range(0, 16):
-                    image = resize(images[j], (155, 128))
+                    image = resize(images[j], input_size)
                     image = image[:,:,np.newaxis]
                     """if print_shape:
                         print ("Shape of re-transposed image:")
@@ -313,7 +313,7 @@ def recall(y_true, y_pred):
     recall = true_positives / (possible_positives + K.epsilon())
     return recall
 
-def MVCNN_small(weights_path=None):
+def MVCNN_small(input_size=(155,128),weights_path=None):
 
     inputs = []
     view_pool = []
@@ -338,7 +338,7 @@ def MVCNN_small(weights_path=None):
     cnn1 = Model(inputs = new_input, outputs = x)
     """
     for i in range(0, 16):
-        new_input = Input((155, 128, 1), name=str(i)) #make new input
+        new_input = Input(input_size+(1,), name=str(i)) #make new input
         x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(new_input)
         x = MaxPooling2D((2,2), strides=(2,2))(x)
         x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
@@ -378,7 +378,7 @@ def MVCNN_small(weights_path=None):
 
     return full_model
 
-def MVCNN(weights_path=None):
+def MVCNN(input_size=(155,128), weights_path=None):
 
     inputs = []
     view_pool = []
@@ -403,7 +403,7 @@ def MVCNN(weights_path=None):
     cnn1 = Model(inputs = new_input, outputs = x)
     """
     for i in range(0, 16):
-        new_input = Input((155, 128, 1), name=str(i)) #make new input
+        new_input = Input(input_size + (1,), name=str(i)) #make new input
         x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(new_input)
         x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
         x = MaxPooling2D((2,2), strides=(2,2))(x)
@@ -465,7 +465,6 @@ def test_generator(test_path):
                     image = resize(images[j], (82, 64))
                     image = image[:,:,np.newaxis]
                     features[str(j)].append(image)# (330, 256, 1)))
-            pdb.set_trace()
             for j in range(0, 16):
                 features[str(j)] = np.array(features[str(j)])
                 #features2.append(np.array(features[j]))
@@ -479,17 +478,17 @@ def predict_model(model, test_path):
     predictions.append(model.predict_generator(test_gen,steps=1))
     return predictions
 
-def model_eval(model, train_path, val_path, label_path, batch_size, name=None):
+def model_eval(model, train_path, val_path, label_path, input_size, batch_size, epochs=1, name=None):
     train_files = [f for f in os.listdir(train_path) if os.path.isfile(os.path.join(train_path, f))]
     val_files = [f for f in os.listdir(val_path) if os.path.isfile(os.path.join(val_path, f))]
 
     train_steps = np.ceil(float(len(train_files)) / float(batch_size))
 
-    train_gen = generator(train_path, label_path, batch_size)
-    val_gen = generator(val_path, label_path, batch_size)
+    train_gen = generator(train_path, label_path, input_size, batch_size)
+    val_gen = generator(val_path, label_path, input_size, batch_size)
     val_steps = np.ceil(float(len(val_files)) / float(batch_size))
     checkpointer = ModelCheckpoint(filepath='/tmp/weights.hdf5', verbose=1, save_best_only=True)
-    history = model.fit_generator(generator=train_gen, validation_data=val_gen, steps_per_epoch = train_steps, validation_steps = val_steps,epochs = 50, verbose=2, callbacks=[checkpointer])
+    history = model.fit_generator(generator=train_gen, validation_data=val_gen, steps_per_epoch = train_steps, validation_steps = val_steps,epochs = epochs, verbose=2, callbacks=[checkpointer])
     if not None:
         model.save('models/' + name + '.h5')
     return model, history
@@ -497,12 +496,15 @@ def model_eval(model, train_path, val_path, label_path, batch_size, name=None):
 
 
 def main():
-    model = MVCNN()
+    input_size= (300,300)
+    batch_size = 1
+    epochs = 1
+    model = MVCNN_small(input_size)
     current_path = os.path.dirname(os.path.realpath(__file__))
     label_path = os.path.join(current_path, 'data/stage1_labels.csv')
     train_path = os.path.join(current_path, 'data/train')
     val_path = os.path.join(current_path, 'data/val')
-    return model_eval(model, train_path, val_path, label_path, batch_size=4, name='test')
+    return model_eval(model, train_path, val_path, label_path, input_size=input_size, batch_size=batch_size, epochs=epochs, name='test')
 
 if __name__ == '__main__':
     model, history = main()
