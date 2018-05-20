@@ -2,6 +2,7 @@ from keras.models import Model
 from keras import layers
 from keras.layers import Activation, Dense, Dropout, Flatten, Input, merge, \
                          Conv2D, Concatenate
+from keras.callbacks import ModelCheckpoint
 from keras.layers.convolutional import Convolution2D, MaxPooling2D, ZeroPadding2D
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,6 +11,9 @@ import pandas as pd
 import exploratory as tsa
 import keras
 import pdb
+from skimage.transform import resize
+
+import cv2
 
 
 def cnn_model():
@@ -75,7 +79,7 @@ def AlexNet(weights_path=None):
 
     return model
 
-def generator(subjects, label_path, batch_size):
+def generator2(subjects, label_path, batch_size):
     # intialize tracking and saving items
     threat_zone_examples = []
     labels = get_subject_labels(label_path)
@@ -92,9 +96,8 @@ def generator(subjects, label_path, batch_size):
                 # transpose so that the slice is the first dimension shape(16, 620, 512)
                 images = images.transpose()
                 for j in range(0, 16):
-                    fake_rgb = np.array([images[j], images[j], images[j]])
-                    image = fake_rgb.transpose()
-                    image = images[j][:,:,np.newaxis]
+                    image = resize(images[j], (82, 64))
+                    image = image[:,:,np.newaxis]
                     """if print_shape:
                         print ("Shape of re-transposed image:")
                         print (image.shape)
@@ -131,7 +134,7 @@ def generator(subjects, label_path, batch_size):
             yield features, np.array(y_batch)
 
 
-def generator2(src, label_path, batch_size):
+def generator(src, label_path, batch_size):
     # intialize tracking and saving items
     files = [f for f in os.listdir(src) if os.path.isfile(os.path.join(src, f))]
     threat_zone_examples = []
@@ -148,8 +151,8 @@ def generator2(src, label_path, batch_size):
                 # transpose so that the slice is the first dimension shape(16, 620, 512)
                 images = images.transpose()
                 for j in range(0, 16):
-                    fake_rgb = np.array([images[j], images[j], images[j]])
-                    image = fake_rgb.transpose()
+                    image = resize(images[j], (155, 128))
+                    image = image[:,:,np.newaxis]
                     """if print_shape:
                         print ("Shape of re-transposed image:")
                         print (image.shape)
@@ -184,20 +187,6 @@ def generator2(src, label_path, batch_size):
                 #features2.append(np.array(features[j]))
 
             yield features, np.array(y_batch)
-
-def model_eval(model, train_path, val_path, label_path, batch_size, name=None):
-    train_files = [f for f in os.listdir(train_path) if os.path.isfile(os.path.join(train_path, f))]
-    val_files = [f for f in os.listdir(val_path) if os.path.isfile(os.path.join(val_path, f))]
-
-    train_steps = np.ceil(float(len(train_files)) / float(batch_size))
-
-    train_gen = generator(train_files, label_path, batch_size)
-    val_gen = generator(val_files, label_path, batch_size)
-    val_steps = np.ceil(float(len(val_files)) / float(batch_size))
-    history = model.fit_generator(generator=train_gen, validation_data=val_gen, steps_per_epoch = train_steps, validation_steps = val_steps,epochs = 3, verbose=2)
-    if not None:
-        model.save('models/' + name + '.h5')
-    return model, history, score
 
 def plot_loss_acc():
     # plot the training loss and accuracy
@@ -324,73 +313,6 @@ def recall(y_true, y_pred):
     recall = true_positives / (possible_positives + K.epsilon())
     return recall
 
-def MVCNN(weights_path=None):
-
-    inputs = []
-    view_pool = []
-
-    """
-    new_input = Input((660, 512, 1)) #make new input
-    #new_input = Input((330, 256, 1)) #make new input
-    x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(new_input)
-    x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
-    x = MaxPooling2D((2,2), strides=(2,2))(x)
-    x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
-    x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
-    x = MaxPooling2D((2,2), strides=(2,2))(x)
-    x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
-    x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
-    x = MaxPooling2D((2,2), strides=(2,2))(x)
-    x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
-    x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
-    x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
-    x = MaxPooling2D((2,2), strides=(2,2))(x)
-    x = Flatten()(x)
-    cnn1 = Model(inputs = new_input, outputs = x)
-    """
-    for i in range(0, 16):
-        new_input = Input((660, 512, 1), name=str(i)) #make new input
-        x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(new_input)
-        x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
-        x = MaxPooling2D((2,2), strides=(2,2))(x)
-        x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
-        x = MaxPooling2D((2,2), strides=(2,2))(x)
-        x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
-        x = MaxPooling2D((2,2), strides=(2,2))(x)
-        x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
-        x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
-        x = MaxPooling2D((2,2), strides=(2,2))(x)
-        x = Flatten()(x)
-        inputs.append(new_input)
-        view_pool.append(x)
-        """
-        cnn1 = Model(inputs = new_input, outputs = x)
-        new_input = Input((660, 512, 1), name=str(i)) #make new input
-        #new_input = Input((330, 256, 1), name=str(i)) #make new input
-        new_model = cnn1(new_input)
-        inputs.append(new_input)
-        view_pool.append(new_model)
-        """
-    vp = Concatenate(axis=0)(view_pool) #tf.concat([vp, v], 0)
-    model = Dense(256, activation='relu', kernel_initializer='glorot_normal')(vp)
-    #model = Dropout(0.2)(model)
-    #model = Dropout(0.2)(model)
-    #model = Flatten()(model)
-    """model = Dense(2048, activation='relu')(vp)
-    model = Dense(1024, activation='relu')(model)
-    model = Dense(512, activation='relu')(model)
-    model = Dense(256, activation='relu')(model) """
-    model = Dense(17, activation='sigmoid', kernel_initializer='glorot_normal')(model)
-
-    full_model = Model(inputs=inputs, outputs=model)
-
-    full_model.compile(loss=keras.losses.categorical_crossentropy,
-            optimizer= keras.optimizers.Adam(lr=0.01), metrics=['accuracy'])
-
-    full_model.summary()
-
-    return full_model
-
 def MVCNN_small(weights_path=None):
 
     inputs = []
@@ -416,7 +338,72 @@ def MVCNN_small(weights_path=None):
     cnn1 = Model(inputs = new_input, outputs = x)
     """
     for i in range(0, 16):
+        new_input = Input((155, 128, 1), name=str(i)) #make new input
+        x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(new_input)
+        x = MaxPooling2D((2,2), strides=(2,2))(x)
+        x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+        x = MaxPooling2D((2,2), strides=(2,2))(x)
+        x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+        x = MaxPooling2D((2,2), strides=(2,2))(x)
+        x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+        x = MaxPooling2D((2,2), strides=(2,2))(x)
+        x = Flatten()(x)
+        inputs.append(new_input)
+        view_pool.append(x)
+        """
+        cnn1 = Model(inputs = new_input, outputs = x)
         new_input = Input((660, 512, 1), name=str(i)) #make new input
+        #new_input = Input((330, 256, 1), name=str(i)) #make new input
+        new_model = cnn1(new_input)
+        inputs.append(new_input)
+        view_pool.append(new_model)
+        """
+    vp = Concatenate(axis=0)(view_pool) #tf.concat([vp, v], 0)
+    model = Dense(32, activation='relu', kernel_initializer='glorot_normal')(vp)
+    #model = Dropout(0.2)(model)
+    #model = Dropout(0.2)(model)
+    #model = Flatten()(model)
+    """model = Dense(2048, activation='relu')(vp)
+    model = Dense(1024, activation='relu')(model)
+    model = Dense(512, activation='relu')(model)
+    model = Dense(256, activation='relu')(model) """
+    model = Dense(17, activation='sigmoid', kernel_initializer='glorot_normal')(model)
+
+    full_model = Model(inputs=inputs, outputs=model)
+
+    full_model.compile(loss=keras.losses.categorical_crossentropy,
+            optimizer= keras.optimizers.Adam(lr=0.01), metrics=['accuracy'])
+
+    full_model.summary()
+
+    return full_model
+
+def MVCNN(weights_path=None):
+
+    inputs = []
+    view_pool = []
+
+    """
+    new_input = Input((660, 512, 1)) #make new input
+    #new_input = Input((330, 256, 1)) #make new input
+    x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(new_input)
+    x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+    x = MaxPooling2D((2,2), strides=(2,2))(x)
+    x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+    x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+    x = MaxPooling2D((2,2), strides=(2,2))(x)
+    x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+    x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+    x = MaxPooling2D((2,2), strides=(2,2))(x)
+    x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+    x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+    x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+    x = MaxPooling2D((2,2), strides=(2,2))(x)
+    x = Flatten()(x)
+    cnn1 = Model(inputs = new_input, outputs = x)
+    """
+    for i in range(0, 16):
+        new_input = Input((155, 128, 1), name=str(i)) #make new input
         x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(new_input)
         x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
         x = MaxPooling2D((2,2), strides=(2,2))(x)
@@ -462,13 +449,60 @@ def MVCNN_small(weights_path=None):
 
     return full_model
 
+def test_generator(test_path):
+    # intialize tracking and saving items
+    files = [f for f in os.listdir(test_path) if os.path.isfile(os.path.join(test_path, f))]
+    while True:
+        for i in range(0, len(files), 1):
+            features = {}
+            for j in range(0, 16):
+                features[str(j)] = []
+            for file in files[i:i+1]:
+                images = tsa.read_data(os.path.join(test_path, file))
+                # transpose so that the slice is the first dimension shape(16, 620, 512)
+                images = images.transpose()
+                for j in range(0, 16):
+                    image = resize(images[j], (82, 64))
+                    image = image[:,:,np.newaxis]
+                    features[str(j)].append(image)# (330, 256, 1)))
+            pdb.set_trace()
+            for j in range(0, 16):
+                features[str(j)] = np.array(features[str(j)])
+                #features2.append(np.array(features[j]))
+
+            yield features
+
+
+def predict_model(model, test_path):
+    test_gen = test_generator(test_path)
+    predictions = []
+    predictions.append(model.predict_generator(test_gen,steps=1))
+    return predictions
+
+def model_eval(model, train_path, val_path, label_path, batch_size, name=None):
+    train_files = [f for f in os.listdir(train_path) if os.path.isfile(os.path.join(train_path, f))]
+    val_files = [f for f in os.listdir(val_path) if os.path.isfile(os.path.join(val_path, f))]
+
+    train_steps = np.ceil(float(len(train_files)) / float(batch_size))
+
+    train_gen = generator(train_path, label_path, batch_size)
+    val_gen = generator(val_path, label_path, batch_size)
+    val_steps = np.ceil(float(len(val_files)) / float(batch_size))
+    checkpointer = ModelCheckpoint(filepath='/tmp/weights.hdf5', verbose=1, save_best_only=True)
+    history = model.fit_generator(generator=train_gen, validation_data=val_gen, steps_per_epoch = train_steps, validation_steps = val_steps,epochs = 50, verbose=2, callbacks=[checkpointer])
+    if not None:
+        model.save('models/' + name + '.h5')
+    return model, history
+
+
+
 def main():
-    model = MVCNN_small()
+    model = MVCNN()
     current_path = os.path.dirname(os.path.realpath(__file__))
     label_path = os.path.join(current_path, 'data/stage1_labels.csv')
     train_path = os.path.join(current_path, 'data/train')
     val_path = os.path.join(current_path, 'data/val')
-    return model_eval(model, train_path, val_path, label_path, batch_size=1, name='test')
+    return model_eval(model, train_path, val_path, label_path, batch_size=4, name='test')
 
 if __name__ == '__main__':
-    model, history, score = main()
+    model, history = main()
