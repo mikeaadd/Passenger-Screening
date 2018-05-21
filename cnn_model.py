@@ -14,11 +14,14 @@ import keras
 import pdb
 from skimage.transform import resize
 import tensorflow as tf
+from keras.optimizers import Adam, RMSprop
+from keras.losses import binary_crossentropy
 
 from keras.applications.resnet50 import ResNet50
 from keras.applications.vgg16 import VGG16
 from hyperas import optim
 from hyperas.distributions import choice, uniform, conditional
+from posthoc_utils import recall, precision
 
 import cv2
 
@@ -370,6 +373,39 @@ def MVCNN_lstm(input_size=(155,128), weights_path=None):
 
         return full_model
 
+def MVCNN_lstmsmall(input_size=(155,128), weights_path=None):
+        inputs = []
+        view_pool = []
+
+        for i in range(0, 16):
+            new_input = Input(input_size + (1,), name=str(i)) #make new input
+            x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(new_input)
+            x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+            x = MaxPooling2D((2,2), strides=(2,2))(x)
+            x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+            x = MaxPooling2D((2,2), strides=(2,2))(x)
+            x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+            x = MaxPooling2D((2,2), strides=(2,2))(x)
+            x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+            x = MaxPooling2D((2,2), strides=(2,2))(x)
+            x = Flatten()(x)
+            inputs.append(new_input)
+            view_pool.append(x)
+        vp = Concatenate(axis=1)(view_pool) #tf.concat([vp, v], 0)
+        vp = Reshape((1,-1))(vp)
+        model = LSTM(4, input_shape=(None,1))(vp)
+        model = Dense(68, activation='relu', kernel_initializer='glorot_normal')(model)
+        model = Dense(17, activation='sigmoid', kernel_initializer='glorot_normal')(model)
+
+        full_model = Model(inputs=inputs, outputs=model)
+
+        full_model.compile(loss=binary_crossentropy,
+                optimizer=Adam(lr=0.01), metrics=['accuracy', recall, precision])
+
+        full_model.summary()
+
+        return full_model
+
 def MVCNN_resnet(input_size=(155,128)):
         inputs = []
         view_pool = []
@@ -527,13 +563,13 @@ def model_eval(model, train_path, val_path, label_path, input_size, batch_size, 
     return model, history
 
 def main():
-    input_size= (224, 224)
-    # input_size= (310, 256)
     # input_size= (224, 224)
+    # input_size= (360, 256)
+    input_size= (155, 128)
     # input_size= (100,100)
     batch_size = 1
     epochs = 1
-    model = MVCNN_lstm(input_size)
+    model = MVCNN_lstmsmall(input_size)
     current_path = os.path.dirname(os.path.realpath(__file__))
     label_path = os.path.join(current_path, 'data/stage1_labels.csv')
     train_path = os.path.join(current_path, 'data/train')
