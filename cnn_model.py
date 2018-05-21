@@ -3,7 +3,8 @@ from keras import layers
 from keras.layers import Activation, Dense, Dropout, Flatten, Input, merge, \
                          Conv2D, Concatenate, LSTM, Conv1D, Reshape, Permute
 from keras.callbacks import ModelCheckpoint
-from keras.layers.convolutional import Convolution2D, MaxPooling2D, ZeroPadding2D
+from keras.layers.convolutional import Convolution2D, MaxPooling2D, \
+                                       ZeroPadding2D, AveragePooling2D
 import numpy as np
 import matplotlib.pyplot as plt
 import os
@@ -13,6 +14,11 @@ import keras
 import pdb
 from skimage.transform import resize
 import tensorflow as tf
+
+from keras.applications.resnet50 import ResNet50
+from keras.applications.vgg16 import VGG16
+from hyperas import optim
+from hyperas.distributions import choice, uniform, conditional
 
 import cv2
 
@@ -80,7 +86,7 @@ def AlexNet(weights_path=None):
 
     return model
 
-def generator3channel(subjects, label_path, batch_size):
+def generator3channel(src, label_path, input_size=(155,128), batch_size=1):
     # intialize tracking and saving items
     files = [f for f in os.listdir(src) if os.path.isfile(os.path.join(src, f))]
     threat_zone_examples = []
@@ -98,7 +104,9 @@ def generator3channel(subjects, label_path, batch_size):
                 images = images.transpose()
                 for j in range(0, 16):
                     image = resize(images[j], input_size)
-                    image = image[:,:,np.newaxis]
+                    image3 = np.array([images[j], images[j], images[j]])
+                    image3 = image3.transpose()
+                    # image3 = image3[:,:,:,np.newaxis]
                     """if print_shape:
                         print ("Shape of re-transposed image:")
                         print (image.shape)
@@ -106,7 +114,7 @@ def generator3channel(subjects, label_path, batch_size):
                     """
                     #resized_image = images[j] #scipy.ndimage.zoom(images[j], (0.5, 0.5))
                     #features[str(j)].append(np.reshape(resized_image, (660, 512, 1)))# (330, 256, 1)))
-                    features[str(j)].append(image)# (330, 256, 1)))
+                    features[str(j)].append(image3)# (330, 256, 1)))
 
                 # get label
                 y = np.zeros((17))
@@ -349,11 +357,51 @@ def MVCNN_lstm(input_size=(155,128), weights_path=None):
             inputs.append(new_input)
             view_pool.append(x)
         vp = Concatenate(axis=1)(view_pool) #tf.concat([vp, v], 0)
-        pdb.set_trace()
-        vp = Reshape((-1,-1,-1))*vp
-        model = LSTM(34)(vp)
+        vp = Reshape((1,-1))(vp)
+        model = LSTM(4, input_shape=(None,1))(vp)
         model = Dense(17, activation='sigmoid', kernel_initializer='glorot_normal')(model)
 
+        full_model = Model(inputs=inputs, outputs=model)
+
+        full_model.compile(loss=keras.losses.binary_crossentropy,
+                optimizer= keras.optimizers.Adam(lr=0.01), metrics=['accuracy'])
+
+        full_model.summary()
+
+        return full_model
+
+def MVCNN_resnet(input_size=(155,128)):
+        inputs = []
+        view_pool = []
+        resnet = ResNet50(weights='imagenet', include_top=False, input_shape=(input_size[0], input_size[1], 3))
+        last_layer = resnet.get_layer('avg_pool').output
+        last_layer = Flatten()(last_layer)
+        cnn1 = Model(inputs = resnet.input, outputs = last_layer)# = pool3)
+
+
+        for i in range(0, 16):
+            new_input = Input(input_size + (3,), name=str(i)) #make new input
+            # resnet = ResNet50(input_tensor = new_input, weights='imagenet', include_top=False, input_shape=(input_size[0], input_size[1], 3))
+            # last_layer = resnet.get_layer('avg_pool').output
+            # print(last_layer._keras_shape)
+            # x = Flatten(name='flatten')(last_layer)
+            # print(x._keras_shape)
+            x = cnn1(new_input)
+            x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+            x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+            x = MaxPooling2D((2,2), strides=(2,2))(x)
+            x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+            x = MaxPooling2D((2,2), strides=(2,2))(x)
+            x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+            x = MaxPooling2D((2,2), strides=(2,2))(x)
+            x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+            x = MaxPooling2D((2,2), strides=(2,2))(x)
+            x = Flatten()(x)
+            inputs.append(new_input)
+            view_pool.append(x)
+
+        vp = Concatenate(axis=1)(view_pool) #tf.concat([vp, v], 0)
+        model = Dense(17, activation='sigmoid', kernel_initializer='glorot_normal')(model)
         full_model = Model(inputs=inputs, outputs=model)
 
         full_model.compile(loss=keras.losses.categorical_crossentropy,
@@ -362,6 +410,76 @@ def MVCNN_lstm(input_size=(155,128), weights_path=None):
         full_model.summary()
 
         return full_model
+
+def VGG_16(weights_path=None):
+
+    inputs = []
+    view_pool = []
+
+    #new_input = Input((512, 660, 3)) #make new input
+
+    #Instantiate shared CNN1 Layers
+    base_model = VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+    base_model.trainable = False
+    x = base_model.layers[10].output
+    #conv1 = Conv2D(32, (3, 3), activation='relu')(x)
+    #pool1 = MaxPooling2D((2,2), strides=(2,2))(conv1)
+    #conv2 = Conv2D(32, (3, 3), activation='relu')(conv1)
+    #pool2 = MaxPooling2D((2,2), strides=(2,2))(conv2)
+    #conv3 = Conv2D(32, (3, 3), activation='relu')(conv2)
+    #conv4 = Conv2D(32, (3, 3), activation='relu')(conv3)
+    #conv5 = Conv2D(32, (3, 3), activation='relu')(conv4)
+    #pool3 = MaxPooling2D((2,2), strides=(2,2))(conv5)
+    x = Flatten()(x)
+    cnn1 = Model(inputs = base_model.input, outputs = x)# = pool3)
+
+    for i in range(0, 16):
+        new_input = Input((512, 660, 3), name=str(i)) #make new input
+        x = cnn1(new_input)
+        new_model = MaxPooling2D((2,2), strides=(2,2))(x)
+        inputs.append(new_input)
+        view_pool.append(new_model)
+
+    #vp = make_view_pool(view_pool, "vp")
+
+    for layer in base_model.layers:
+        layer.trainable = False
+
+    vp = Concatenate(axis=0)(view_pool) #tf.concat([vp, v], 0)
+    model = Dense(128, activation='relu')(vp)
+    model = Dropout(0.2)(model)
+    model = Dense(64, activation='relu')(model)
+    model = Dropout(0.2)(model)
+    print(model._keras_shape)
+    # model = Flatten()(model)
+    model = Dense(17, activation='sigmoid')(model)
+
+    full_model = Model(inputs=inputs, outputs=model)
+
+    full_model.compile(loss=keras.losses.binary_crossentropy,
+            optimizer= keras.optimizers.Adam(lr=0.001), metrics=['acc'])
+
+    base_model.summary()
+    print("----")
+
+    full_model.summary()
+
+    return full_model
+
+def resnet50(input_size):
+    resnet_model = ResNet50(weights='imagenet', include_top=False, input_shape=(input_size[0], input_size[1], 3))
+    x = resnet_model.output
+    x = Flatten()(x)
+    x = Dense(1024, activation='linear', name='fc1')(x)
+    x = LeakyReLU(alpha=0.1)(x)
+    x = Dropout(0.1)(x)
+    x = Dense(1, activation='sigmoid', name='prediction')(x)
+    model = Model(inputs=resnet_model.inputs, outputs=x)
+    sgd = keras.optimizers.SGD(lr=0.001, decay=1e-6, momentum=0.7, nesterov=True)
+    model.compile(loss='binary_crossentropy',
+                  optimizer=sgd,
+                  metrics=['accuracy'])
+    return model
 
 
 def test_generator(test_path):
@@ -409,13 +527,13 @@ def model_eval(model, train_path, val_path, label_path, input_size, batch_size, 
     return model, history
 
 def main():
-    # input_size= (620, 512)
+    input_size= (224, 224)
     # input_size= (310, 256)
-    input_size= (155, 128)
+    # input_size= (224, 224)
     # input_size= (100,100)
     batch_size = 1
     epochs = 1
-    model = MVCNN_small(input_size)
+    model = MVCNN_lstm(input_size)
     current_path = os.path.dirname(os.path.realpath(__file__))
     label_path = os.path.join(current_path, 'data/stage1_labels.csv')
     train_path = os.path.join(current_path, 'data/train')
