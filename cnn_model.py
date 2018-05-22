@@ -22,6 +22,7 @@ from keras.applications.vgg16 import VGG16
 from hyperas import optim
 from hyperas.distributions import choice, uniform, conditional
 from posthoc_utils import recall, precision
+from callbacks.trainingmonitor import TrainingMonitor
 
 import cv2
 
@@ -406,6 +407,40 @@ def MVCNN_lstmsmall(input_size=(155,128), weights_path=None):
 
         return full_model
 
+def MVCNN_1dconv(input_size=(155,128), weights_path=None):
+        inputs = []
+        view_pool = []
+
+        for i in range(0, 16):
+            new_input = Input(input_size + (1,), name=str(i)) #make new input
+            x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(new_input)
+            x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+            x = MaxPooling2D((2,2), strides=(2,2))(x)
+            x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+            x = MaxPooling2D((2,2), strides=(2,2))(x)
+            x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+            x = MaxPooling2D((2,2), strides=(2,2))(x)
+            x = Conv2D(32, (3, 3), activation='relu', kernel_initializer='glorot_normal')(x)
+            x = MaxPooling2D((2,2), strides=(2,2))(x)
+            x = Flatten()(x)
+            inputs.append(new_input)
+            view_pool.append(x)
+        vp = Concatenate(axis=1)(view_pool)
+        # pdb.set_trace() #tf.concat([vp, v], 0)
+        vp = Reshape((1, -1))(vp)
+        model = Conv1D(2, 1)(vp)
+        model = Flatten()(model)
+        model = Dense(68, activation='relu', kernel_initializer='glorot_normal')(model)
+        model = Dense(17, activation='sigmoid', kernel_initializer='glorot_normal')(model)
+
+        full_model = Model(inputs=inputs, outputs=model)
+
+        full_model.compile(loss=binary_crossentropy, optimizer=Adam(lr=0.01), metrics=['accuracy'])
+
+        full_model.summary()
+
+        return full_model
+
 def MVCNN_resnet(input_size=(155,128)):
         inputs = []
         view_pool = []
@@ -556,8 +591,15 @@ def model_eval(model, train_path, val_path, label_path, input_size, batch_size, 
     train_gen = generator(train_path, label_path, input_size, batch_size)
     val_gen = generator(val_path, label_path, input_size, batch_size)
     val_steps = np.ceil(float(len(val_files)) / float(batch_size))
-    checkpointer = ModelCheckpoint(filepath='/tmp/weights.hdf5', verbose=1, save_best_only=True)
-    history = model.fit_generator(generator=train_gen, validation_data=val_gen, steps_per_epoch = train_steps, validation_steps = val_steps,epochs = epochs, verbose=1, callbacks=[checkpointer])
+    checkpoint = ModelCheckpoint('/tmp/weights.hdf5', monitor="val_loss", save_best_only=True, verbose=1)
+    base = f'models/{name}'
+    if not os.path.exists(base):
+        os.mkdir(base)
+    figpath = base + '/model.png'
+    jsonpath = base + '/history.json'
+    trainmonitor = TrainingMonitor(figpath, jsonPath=jsonpath)
+    callbacks = [checkpoint, trainmonitor]
+    history = model.fit_generator(generator=train_gen, validation_data=val_gen, steps_per_epoch = train_steps, validation_steps = val_steps,epochs = epochs, verbose=1, callbacks=callbacks)
     if not None:
         model.save('models/' + name + '.h5')
     return model, history
@@ -568,13 +610,15 @@ def main():
     input_size= (155, 128)
     # input_size= (100,100)
     batch_size = 1
-    epochs = 1
-    model = MVCNN_lstmsmall(input_size)
+    epochs = 2
+    name = 'conv1d_test'
+    model = MVCNN_1dconv(input_size)
     current_path = os.path.dirname(os.path.realpath(__file__))
     label_path = os.path.join(current_path, 'data/stage1_labels.csv')
     train_path = os.path.join(current_path, 'data/train')
     val_path = os.path.join(current_path, 'data/val')
-    return model_eval(model, train_path, val_path, label_path, input_size=input_size, batch_size=batch_size, epochs=epochs, name='test')
+    model, history = model_eval(model, train_path, val_path, label_path, input_size=input_size, batch_size=batch_size, epochs=epochs, name=name)
+    return model, history
 
 if __name__ == '__main__':
     model, history = main()

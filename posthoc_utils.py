@@ -124,3 +124,10 @@ def recall(y_true, y_pred):
     possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
     recall = true_positives / (possible_positives + K.epsilon())
     return recall
+
+def get_model(path):
+    model = load_model(path, custom_objects={'recall':recall, 'precision':precision})
+    return model
+
+def get_model_viz(model):
+    pass
